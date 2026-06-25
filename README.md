@@ -6,6 +6,8 @@
 
 > `Production Readiness: 47/100` — point it at a repo, get a severity-ranked report of every operational and reliability gap between your app and a real launch.
 
+> **Not the first in this space** — see [Prior art](#prior-art--how-this-differs). shipgrade's angle is a *research-grounded, individually-cited* checklist (every check tied to a named source: Google SRE, 12-Factor, Well-Architected, …) and a deliberately report-only, ops/reliability focus.
+
 ---
 
 ## The problem
@@ -126,6 +128,34 @@ literature — Google SRE & the Production Readiness Review, the
 [Twelve-Factor App](https://12factor.net), AWS & Azure Well-Architected,
 *Release It!*, *Production-Ready Microservices*, Accelerate/DORA, and
 OpenTelemetry — with every check tied to a named source.
+
+## Prior art & how this differs
+
+shipgrade is **not the first** production-readiness scanner for AI-generated
+code, and it doesn't pretend to be. If you want the most checks or the most
+integrations today, look at these first:
+
+- **[prodlint](https://prodlint.com/)** — free OSS CLI / MCP server, 52 rules
+  across security, reliability, performance, and AI-quality, with a 0–100 score.
+- **[Vibe Check](https://vibe-check.cloud/)** — free OSS Claude Code skills
+  package, 12 domains, `/check` and `/fix`, works with 9 AI coding tools.
+
+Where shipgrade is deliberately different:
+
+- **Every check is cited.** The ~90 checks come from named sources (Google SRE /
+  PRR, the Twelve-Factor App, AWS & Azure Well-Architected, *Release It!*,
+  *Production-Ready Microservices*, Accelerate/DORA, OpenTelemetry) — see
+  [`production-readiness-reference.md`](./production-readiness-reference.md). The
+  goal is defensible depth, not the longest rule count.
+- **Report-only by design.** No `/fix`. shipgrade diagnoses and stops, on
+  purpose — the prescription is a separate, deliberate step.
+- **Ops/reliability-focused, not security-first.** It leans into the
+  operability gaps (resilience, observability, data integrity, deploy safety)
+  rather than leading with vulnerability scanning.
+
+It was built as much to demonstrate rigorous, test-driven *skill authoring* (a
+research workflow → a cited reference → a behaviorally-tested skill) as to
+compete on raw coverage.
 
 ---
 
