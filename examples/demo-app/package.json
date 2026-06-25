@@ -1,0 +1,12 @@
+{
+  "name": "quicknotes-api",
+  "version": "0.0.1",
+  "description": "A notes API I vibe-coded this weekend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4"
+  }
+}
