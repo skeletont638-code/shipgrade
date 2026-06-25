@@ -1,0 +1,325 @@
+{
+  "score": 0,
+  "generated_for": "/tmp/claude-1000/-home-clawdagent/b40bab2c-8227-4d78-b713-fc563fe5cef6/scratchpad/sg-green/demo-app",
+  "stack": {
+    "language": "JavaScript (Node.js)",
+    "framework": "Express 4.x",
+    "package_manager": "npm"
+  },
+  "architecture": {
+    "http_api": true,
+    "broker_consumer": false,
+    "database": false,
+    "containerized": false,
+    "public_api": false,
+    "stateful": true
+  },
+  "summary": {
+    "blocker": 12,
+    "high": 14,
+    "medium": 3,
+    "low": 1
+  },
+  "findings": [
+    {
+      "id": "ERR-01",
+      "category": "Error handling & resilience",
+      "severity": "Blocker",
+      "title": "No process supervisor or automated self-healing",
+      "why": "The process is started with `node server.js` and nothing monitors or restarts it. A single unhandled exception or OOM crash causes a permanent outage until a human intervenes — MTTR is hours, not seconds.",
+      "fix_concept": "Run the process under a supervisor (PM2, systemd, or a container restart policy) that restarts on crash, limits restart loops, and alerts on repeated failures. Pair with an uncaughtException handler that logs before exiting cleanly.",
+      "location": "server.js",
+      "source": "AWS Well-Architected Framework — Reliability Pillar (self-healing); Azure WAF Reliability Principles; Production-Ready Microservices App. A"
+    },
+    {
+      "id": "ERR-02",
+      "category": "Error handling & resilience",
+      "severity": "Blocker",
+      "title": "Single point of failure — no redundancy at any layer",
+      "why": "One process instance, one in-memory data store, no secondary host. Any hardware event, OS-level failure, or network blip takes the service fully offline with zero automatic failover.",
+      "fix_concept": "Run at least two process instances behind a load balancer (N+2 target for SLO compliance). Migrate data to a replicated persistent store so the data tier has independent redundancy from the compute tier.",
+      "location": "server.js",
+      "source": "Production-Ready Microservices (Fowler, App. A); Google SRE Book — Launch Checklist"
+    },
+    {
+      "id": "ERR-03",
+      "category": "Error handling & resilience",
+      "severity": "High",
+      "title": "SIGTERM not handled — in-flight requests dropped on shutdown",
+      "why": "The process calls `app.listen()` but has no SIGTERM handler. Rolling deploys and supervisor-driven restarts send SIGTERM first; the process exits immediately, dropping any in-flight HTTP connections mid-response.",
+      "fix_concept": "Register a `process.on('SIGTERM', ...)` handler that stops accepting new connections (`server.close()`), drains in-flight requests with a timeout, and then exits cleanly. This is required for zero-downtime deploys.",
+      "location": "server.js (line 41)",
+      "source": "12factor.net/disposability (Factor IX); Kubernetes Pod Lifecycle docs"
+    },
+    {
+      "id": "ERR-04",
+      "category": "Error handling & resilience",
+      "severity": "High",
+      "title": "GET /notes/:id swallows errors and returns HTTP 200 with empty body",
+      "why": "The catch block returns `res.json({})` with HTTP 200 on any error, and also returns 200 with `null` (JSON-serialised as `null`) when the note is not found. Callers cannot distinguish success from failure or not-found, monitoring cannot count errors, and upstream retries cannot identify transient vs. permanent failures.",
+      "fix_concept": "Return HTTP 404 with a structured error body when the note is not found. Return HTTP 500 (or an appropriate 4xx) with a logged error reference when an unexpected exception is caught. Never swallow exceptions silently; at minimum log the error with a correlation ID.",
+      "location": "server.js (lines 32-39)",
+      "source": "Release It! 2nd Ed. ch. 4 (Timeout/error handling); Google SRE Book — Service Best Practices"
+    },
+    {
+      "id": "OBS-01",
+      "category": "Observability",
+      "severity": "Blocker",
+      "title": "Zero observability — no structured logs, no metrics, no traces",
+      "why": "The entire observability surface is a single `console.log('up on 3000')` at startup. There are no request logs, no error logs, no latency metrics, and no distributed trace instrumentation. When the service fails, there is no signal at all — the first indicator will be a user complaint.",
+      "fix_concept": "Add a structured JSON request logger (e.g. `pino-http`) that emits method, path, status, duration, and a correlation/request ID for every request. Add a metrics library (e.g. `prom-client`) and expose a `/metrics` endpoint. Instrument with OpenTelemetry for traces. These are prerequisites for every other monitoring control.",
+      "location": "server.js (line 41)",
+      "source": "OpenTelemetry — Observability Primer; Production-Ready Microservices App. A; Azure WAF Operational Excellence"
+    },
+    {
+      "id": "OBS-02",
+      "category": "Observability",
+      "severity": "Blocker",
+      "title": "No alerting on user-visible failures or golden signals",
+      "why": "With no metrics emitted there is no alert infrastructure. Errors, latency spikes, and full outages are undetectable until a user reports them. The four golden signals (latency, traffic, errors, saturation) are completely unmeasured. This makes the service impossible to operate in production.",
+      "fix_concept": "After adding metrics (OBS-01), define alert rules on at least: error rate (5xx / total requests), p99 latency vs. SLO, and process saturation (event-loop lag, memory). Wire these to a paging channel (PagerDuty, OpsGenie, or similar) so failures surface in seconds, not hours.",
+      "location": "server.js",
+      "source": "Google SRE Book — Monitoring Distributed Systems (four golden signals); Google SRE Book Ch. 32 (PRR)"
+    },
+    {
+      "id": "OBS-03",
+      "category": "Observability",
+      "severity": "High",
+      "title": "No SLIs or SLOs defined",
+      "why": "Without quantitative reliability targets there is no shared definition of 'working,' no objective basis for deploy/rollback decisions, and no measurement of whether the service is acceptable for users.",
+      "fix_concept": "Define at minimum: an availability SLI (successful requests / total requests), a latency SLI (fraction of requests completing under X ms), and corresponding SLO thresholds (e.g. 99.5% availability, p99 < 300 ms over a 30-day rolling window). Document the error budget and what deploys are allowed when the budget is exhausted.",
+      "location": "N/A — documentation gap",
+      "source": "Google SRE Book Ch. 4 (SLOs); Google SRE Workbook Ch. 2 (Implementing SLOs)"
+    },
+    {
+      "id": "OBS-04",
+      "category": "Observability",
+      "severity": "High",
+      "title": "No structured log format and no correlation/trace IDs",
+      "why": "Plain-text or missing logs cannot be queried at scale. Without a trace/request ID injected into every log record, it is impossible to correlate log lines from a single request, or to jump from a log entry to the associated distributed trace mid-incident.",
+      "fix_concept": "Emit every log line as JSON (pino or winston with JSON transport). Generate a unique request ID per inbound request (nanoid or crypto.randomUUID) and include it in every log record for that request. If traces are added (OBS-01), inject the OpenTelemetry trace_id and span_id into every log record.",
+      "location": "server.js",
+      "source": "OpenTelemetry Semantic Conventions 1.42.0; Observability Engineering (O'Reilly 2022)"
+    },
+    {
+      "id": "OBS-05",
+      "category": "Observability",
+      "severity": "Medium",
+      "title": "No /health or /ready endpoint",
+      "why": "Without a structured health endpoint, load balancers and operators have no machine-readable signal to determine whether the app is healthy and ready to serve traffic. A single GET / returning 200 is the only proxy, and it conflates 'the process is running' with 'the process is healthy and warmed up.'",
+      "fix_concept": "Add a `/health` (liveness — process is alive) and `/ready` (readiness — can accept traffic) route. The health endpoint should return a JSON body with at minimum: build version, start time, and status. The ready endpoint should confirm any warm-up or initialization is complete.",
+      "location": "server.js",
+      "source": "Kubernetes probe docs; practitioner health-endpoint patterns (Spring Boot Actuator, MicroProfile Health)"
+    },
+    {
+      "id": "CFG-01",
+      "category": "Config & secrets hygiene",
+      "severity": "Blocker",
+      "title": "Live API key hardcoded and committed directly in server.js",
+      "why": "`API_KEY = \"sk_live_demo_2f8ad91c\"` is embedded in source code with a comment reading 'TODO move this somewhere.' Anyone with repository read access — current or future, including via git history even after deletion — has this credential. This is the leading cause of CI/CD credential compromise.",
+      "fix_concept": "Remove the key from source immediately. Rotate the key (invalidate the committed value). Load it at runtime from an environment variable (`process.env.API_KEY`) and validate its presence at startup. For production, inject from a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) rather than shell environment where possible.",
+      "location": "server.js (line 7)",
+      "source": "OWASP Secrets Management Cheat Sheet; 12factor.net/config (Factor III)"
+    },
+    {
+      "id": "CFG-02",
+      "category": "Config & secrets hygiene",
+      "severity": "High",
+      "title": "No startup config validation — misconfiguration silently accepted",
+      "why": "All config (PORT, API_KEY) is hardcoded; there is no validation of environment variables at startup. If the app is later refactored to read from env and a required value is absent or malformed, the process will start, pass health checks, and crash only on the first request that touches the missing value.",
+      "fix_concept": "Validate all required environment variables at startup, before binding to a port. If validation fails, log the missing/invalid keys and exit with a non-zero code immediately. Libraries like `envalid` or a simple Zod schema make this one-time validation easy and produce clear error messages.",
+      "location": "server.js",
+      "source": "Google SRE Book — Service Best Practices (Fail Sanely); 12factor.net/config (Factor III)"
+    },
+    {
+      "id": "RLB-01",
+      "category": "Reliability & data integrity",
+      "severity": "Blocker",
+      "title": "No persistent data layer — all notes are lost on every process restart",
+      "why": "`const notes = []` lives in process memory. Every crash, deploy, or supervisor restart permanently destroys all user data. There is no backup, no restore path, and no RTO/RPO because no recovery is possible — data loss is total and irreversible on every deployment.",
+      "fix_concept": "Replace the in-memory store with a persistent database (PostgreSQL, SQLite with WAL, etc.). Once a real database exists, implement tiered backups (automated snapshots distinct from replication), test restores on a schedule, and document RTO and RPO targets per the business requirements.",
+      "location": "server.js (lines 12-13)",
+      "source": "Google SRE Book Ch. 26 (Data Integrity); AWS Well-Architected REL13-BP01/BP03"
+    },
+    {
+      "id": "RLB-02",
+      "category": "Reliability & data integrity",
+      "severity": "Blocker",
+      "title": "POST /notes is non-idempotent — retries create duplicate notes",
+      "why": "Every POST creates a new note with `id = notes.length + 1`. A network timeout on the client side, an automatic retry from a proxy or SDK, or a user double-submitting will silently create duplicate records. There is no idempotency key, no deduplication, and no way for the caller to know whether the first request succeeded.",
+      "fix_concept": "Accept a caller-supplied idempotency key (e.g. a UUID in a header like `Idempotency-Key`). Store the key atomically with the created note. On a duplicate request with the same key, return the already-created note rather than creating another. This makes POST safe to retry.",
+      "location": "server.js (lines 15-18)",
+      "source": "AWS Builders' Library — Idempotent APIs; AWS Well-Architected REL04-BP04"
+    },
+    {
+      "id": "RLB-03",
+      "category": "Reliability & data integrity",
+      "severity": "High",
+      "title": "No input validation on POST /notes",
+      "why": "`req.body.text` and `req.body.userId` are used without any validation. A request with no body, a null `text`, or a non-existent `userId` is accepted silently and stored. This produces corrupt or nonsensical records and can cause runtime errors downstream (e.g. if code later expects `text` to be a string).",
+      "fix_concept": "Validate the request body at the entry point before touching application logic. At minimum: assert `text` is a non-empty string (with a max length), assert `userId` is a positive integer. Return HTTP 400 with a structured error body for validation failures. A schema library like Zod or Joi makes this concise.",
+      "location": "server.js (lines 15-18)",
+      "source": "OWASP ASVS 4.0; OWASP Input Validation Cheat Sheet"
+    },
+    {
+      "id": "RLB-04",
+      "category": "Reliability & data integrity",
+      "severity": "High",
+      "title": "In-memory process state blocks horizontal scaling",
+      "why": "The `notes` array and `users` object live in one process instance's memory. Running two instances means each has its own independent copy of the data — reads and writes are silently inconsistent across instances. Autoscaling or any multi-instance deploy produces split-brain data.",
+      "fix_concept": "Externalize all state to a shared persistent layer (database for notes, external session store if sessions are added). Each application process should be stateless and share-nothing, deriving all state from the backing service. This is a prerequisite for safe horizontal scaling.",
+      "location": "server.js (lines 12-13)",
+      "source": "12factor.net/processes (Factor VI); AWS Well-Architected Performance Efficiency Pillar"
+    },
+    {
+      "id": "TST-01",
+      "category": "Testing",
+      "severity": "Blocker",
+      "title": "Zero automated tests — no test runner, no test files",
+      "why": "There is no `test` script in package.json, no test framework dependency, and no test files. Every code change is deployed with zero automated verification. Regressions accumulate undetected; the change-failure rate has no quality gate.",
+      "fix_concept": "Add a test framework (Jest or Vitest). Write unit tests for any pure logic, and integration tests for every HTTP endpoint using supertest or a similar HTTP testing library. Include at minimum: happy-path tests for POST and GET, 404 for missing note IDs, and 400 for invalid input. Wire `npm test` to run the suite on every commit.",
+      "location": "package.json",
+      "source": "Accelerate ch. 4 (Continuous Integration); DORA CI capability"
+    },
+    {
+      "id": "CD-01",
+      "category": "CI/CD & deploy",
+      "severity": "Blocker",
+      "title": "No CI pipeline — code changes are never automatically validated",
+      "why": "There is no CI configuration (no `.github/workflows/`, no CircleCI, no GitLab CI, etc.). Code can be pushed to the main branch and deployed to production without a build, lint, or test pass. This removes the only automated quality gate between a developer's change and a production outage.",
+      "fix_concept": "Add a CI configuration file that triggers on every push: install dependencies (`npm ci`), run the linter, and run the test suite. The build must complete and all tests must pass before a merge is allowed. A GitHub Actions workflow (`.github/workflows/ci.yml`) with three steps achieves this.",
+      "location": "/ (no CI config file present)",
+      "source": "DORA Continuous Integration capability; Accelerate ch. 4"
+    },
+    {
+      "id": "CD-02",
+      "category": "CI/CD & deploy",
+      "severity": "Blocker",
+      "title": "No automated deployment pipeline — all deploys are fully manual",
+      "why": "There is no deploy automation. Deploying means someone manually copying files or running `node server.js` on a server. Manual steps introduce human error, prevent deploy-on-demand, and make rollback a manual, error-prone operation — especially under incident pressure.",
+      "fix_concept": "Add a CD stage to the CI pipeline that packages the application as an immutable artifact (container image or versioned tarball), pushes it to a registry/store, and then deploys it to the target environment. Every deploy should be reproducible from the artifact alone with zero manual steps.",
+      "location": "/ (no deploy config file present)",
+      "source": "DORA Continuous Delivery capability; Production-Ready Microservices App. A"
+    },
+    {
+      "id": "CD-03",
+      "category": "CI/CD & deploy",
+      "severity": "Blocker",
+      "title": "No immutable versioned release artifacts — no rollback path",
+      "why": "Without tagged, retrievable release artifacts, every deploy overwrites the previous version in place. Rolling back after a bad deploy requires recreating the prior state from source — a manual process that is slow, error-prone, and impossible under incident pressure if the prior state is unclear.",
+      "fix_concept": "Every commit that passes CI should produce an immutable, uniquely tagged artifact (a Docker image tagged with the git SHA, or a versioned tarball stored in S3/GCS). Rollback becomes a single step: redeploy the previous artifact tag. Maintain an append-only ledger of deployments so the prior good artifact is always known.",
+      "location": "/ (no Dockerfile, no artifact config)",
+      "source": "12factor.net/build-release-run (Factor V); Google SRE Book — Release Engineering"
+    },
+    {
+      "id": "CD-04",
+      "category": "CI/CD & deploy",
+      "severity": "Blocker",
+      "title": "No smoke tests gating production deploys",
+      "why": "Environment-specific differences (DNS, TLS, env vars, infra config) can make a deploy that passed all pre-prod tests serve broken traffic in production. Without automatic smoke tests running against the newly deployed instance, broken deploys are detected only when users report failures.",
+      "fix_concept": "After every production deploy, run a minimal smoke-test suite that hits the service's critical endpoints (POST a note, GET notes, GET one note by ID) and asserts correct responses. Gate rollout continuation on smoke-test success; auto-rollback if the suite fails.",
+      "location": "/ (no smoke test config)",
+      "source": "Google SRE Book — Testing for Reliability"
+    },
+    {
+      "id": "CD-05",
+      "category": "CI/CD & deploy",
+      "severity": "High",
+      "title": "No lockfile — npm installs produce non-reproducible dependency trees",
+      "why": "Without `package-lock.json`, `npm install` resolves to the latest version of every package matching the semver range at install time. Two installs on different days — or on different machines — may install different versions. A transitive dependency update can silently break production in a way that never fails locally.",
+      "fix_concept": "Commit `package-lock.json` to version control and use `npm ci` (not `npm install`) in CI and production deploy pipelines. `npm ci` installs the exact versions in the lockfile and fails if the lockfile is missing or out of sync with package.json.",
+      "location": "package.json",
+      "source": "12factor.net/dependencies (Factor II)"
+    },
+    {
+      "id": "PERF-01",
+      "category": "Performance & scale",
+      "severity": "High",
+      "title": "N+1 query pattern on GET /notes",
+      "why": "GET /notes loops over every note and performs one user lookup per note. The comment in the code explicitly labels this 'pretend this is a per-row DB call.' On 5,000 notes, this is 5,001 round-trips where 1 would suffice — a classic N+1 pattern that collapses throughput under realistic data volumes.",
+      "fix_concept": "Batch-load all referenced users in a single query before the loop (a SQL `WHERE id IN (...)` or equivalent), then perform the join in application memory. With a real database, an ORM eager-load or a JOIN achieves this in one query regardless of result size.",
+      "location": "server.js (lines 21-29)",
+      "source": "PlanetScale — N+1 Query Problem; AWS Well-Architected PERF03-BP04"
+    },
+    {
+      "id": "PERF-02",
+      "category": "Performance & scale",
+      "severity": "High",
+      "title": "No pagination on GET /notes — unbounded result set",
+      "why": "GET /notes returns every note in the store with no limit. As the dataset grows, response size and serialization time grow without bound. At production scale this endpoint will time out, exhaust memory, or saturate the network.",
+      "fix_concept": "Add cursor/keyset pagination: accept a `cursor` (the ID of the last seen note) and a `limit` parameter (default 20, max 100). Return only the next page of results plus a `next_cursor` for the following page. Avoid offset pagination, which performs a full scan to the offset position and produces skips/duplicates under concurrent writes.",
+      "location": "server.js (lines 21-29)",
+      "source": "Gusto Embedded — API Pagination; Stacksync — Keyset vs Offset"
+    },
+    {
+      "id": "PERF-03",
+      "category": "Performance & scale",
+      "severity": "High",
+      "title": "No rate limiting — a single client can exhaust server capacity",
+      "why": "There is no request rate limit on any endpoint. A single misbehaving client, a misconfigured retry loop, or a trivial load spike can saturate the single-threaded Node.js event loop and deny service to all other clients.",
+      "fix_concept": "Add a rate-limiting middleware (e.g. `express-rate-limit`) that caps requests per IP per time window. Return HTTP 429 with a `Retry-After` header when the limit is exceeded. Set the limit conservatively (e.g. 100 req/min per IP for write endpoints, higher for reads) and adjust based on real traffic patterns.",
+      "location": "server.js",
+      "source": "RFC 6585 (HTTP 429 + Retry-After); Speakeasy — Rate Limiting Best Practices"
+    },
+    {
+      "id": "OPS-01",
+      "category": "Operational docs",
+      "severity": "High",
+      "title": "No runbooks for any failure scenario",
+      "why": "There are no runbooks covering what to do when the process crashes, when memory usage spikes, when requests start failing, or how to restore data after a restart. On-call response to any incident requires improvisation under pressure.",
+      "fix_concept": "Write a runbook for each expected alert type before the service is put on-call. At minimum: process crash (how to restart, where to check logs), high error rate (how to identify the failing endpoint, how to roll back), and data loss (restore procedure once persistence is added). Runbooks live alongside the code in the repo.",
+      "location": "/ (no runbook directory)",
+      "source": "Google SRE Book Ch. 32 (PRR); AWS Well-Architected Reliability Pillar (playbooks)"
+    },
+    {
+      "id": "OPS-02",
+      "category": "Operational docs",
+      "severity": "High",
+      "title": "No service documentation — architecture, dependencies, endpoints, contacts",
+      "why": "The README is four lines describing the fixture purpose. There is no documentation of the service architecture, what it depends on, what its endpoints are, who owns it, or how to reach the on-call owner. A new engineer or an on-call responder has no starting point.",
+      "fix_concept": "Write a service README covering: what the service does, its API endpoints and expected request/response shapes, all external dependencies, the deployment model, how to run it locally, and who owns it. Add an architecture diagram (even a text ASCII diagram) showing request flow.",
+      "location": "README.md",
+      "source": "Production-Ready Microservices (Fowler, App. A)"
+    },
+    {
+      "id": "OPS-03",
+      "category": "Operational docs",
+      "severity": "High",
+      "title": "No on-call rotation or escalation path defined",
+      "why": "If the service pages, there is no documented primary or escalation contact. An alert that routes to nobody is operationally equivalent to no alert at all — the incident proceeds undetected.",
+      "fix_concept": "Before going on-call, document: who is the primary on-call owner, the secondary/escalation contact, the paging channel (PagerDuty service, OpsGenie rotation, etc.), and the escalation threshold (how long before escalating from primary to secondary). Validate with a test page.",
+      "location": "/ (no on-call documentation)",
+      "source": "Google SRE Book Ch. 11 (Being On-Call); AWS Well-Architected Operational Excellence (escalation paths)"
+    },
+    {
+      "id": "OPS-04",
+      "category": "Operational docs",
+      "severity": "Medium",
+      "title": "No Operational Readiness Review (ORR) conducted before launch",
+      "why": "Without a formal ORR gate, the service can ship to production with no runbooks, no on-call assignment, and no tested recovery path — exactly the state it is currently in. An ORR makes these gaps explicit before they are discovered during an incident.",
+      "fix_concept": "Run an ORR checklist before every production launch. At minimum verify: monitoring and alerting are live, runbooks exist and are linked from alerts, on-call is assigned and tested, rollback is practiced, and data recovery has been exercised once.",
+      "location": "N/A — process gap",
+      "source": "AWS Well-Architected Reliability Pillar (Operational Readiness Reviews)"
+    },
+    {
+      "id": "OPS-05",
+      "category": "Operational docs",
+      "severity": "Medium",
+      "title": "No structured health endpoint returns version and dependency status",
+      "why": "The app has no /health endpoint at all (see OBS-05), but even if a bare liveness check is added, it should return build version and dependency status. During an incident, 'is this the right build deployed?' and 'which dependency is degraded?' are the first two questions and currently have no machine-readable answer.",
+      "fix_concept": "Extend the /health endpoint to return: app version (from package.json or GIT_SHA env var), process uptime, and status of any external dependencies checked within a short deadline. This enables rapid triage without log access.",
+      "location": "server.js",
+      "source": "Kubernetes probe docs; practitioner health-endpoint patterns"
+    },
+    {
+      "id": "OPS-06",
+      "category": "Operational docs",
+      "severity": "Low",
+      "title": "No blameless postmortem process defined",
+      "why": "Without a defined postmortem process, every incident closes without a learning loop. The same failure modes recur because root causes are not systematically identified and fed back into runbooks or architecture decisions.",
+      "fix_concept": "Adopt a lightweight postmortem template: timeline, impact, root cause, contributing factors, and action items with owners and due dates. Run a postmortem for every incident that causes an SLO violation or significant user impact. Feed action items back into the codebase, runbooks, or monitoring.",
+      "location": "N/A — process gap",
+      "source": "Google SRE Book — Postmortems; AWS Well-Architected Operational Excellence"
+    }
+  ]
+}
